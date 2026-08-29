@@ -1,6 +1,8 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 exposes the whole framework through one import.
+   It replaces the v3 `@tailwind base/components/utilities` trio; under v4
+   those directives silently emitted only the theme-independent utilities,
+   so colours, spacing and radii never made it into the bundle. */
+@import "tailwindcss";
 
 
 /* Scrollbar styling */

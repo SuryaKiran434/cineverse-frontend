@@ -54,9 +54,9 @@ jobs:
 
       # TEMPORARY BASELINE — non-blocking on purpose.
       #
-      # `npm run lint` currently reports 17 pre-existing errors (unused React
-      # imports, an unused `err` binding, `module` undefined in
-      # tailwind.config.js). Making this blocking on day one would land a
+      # `npm run lint` currently reports 16 pre-existing errors (unused React
+      # imports and an unused `err` binding). Making this blocking on day one
+      # would land a
       # pipeline that is red on arrival, and a check that is always red is a
       # check everyone learns to ignore.
       #
