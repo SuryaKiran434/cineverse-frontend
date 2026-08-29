@@ -64,6 +64,9 @@ jobs:
       # down. Once it reaches zero, delete `continue-on-error` below and this
       # comment to make lint a real gate.
       - name: Lint (non-blocking baseline)
+        # Runs even when an earlier step failed, so the report is not lost on a
+        # red build. Does not run if the job was cancelled.
+        if: ${{ !cancelled() }}
         run: npm run lint
         continue-on-error: true
 
@@ -71,6 +74,8 @@ jobs:
       # without blocking a merge on a transitive advisory that has no fix
       # available that day. The summary lands on the run's summary page.
       - name: Security audit (informational)
+        # Reports on every run, including runs where the build failed.
+        if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
         run: |
