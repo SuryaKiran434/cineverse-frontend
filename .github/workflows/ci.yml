@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same branch/PR to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    # This name becomes the status-check context. Keep it stable — renaming it
+    # orphans any branch protection rule that references the old name.
+    name: Frontend (Node 20)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # `npm ci` — deliberately NOT `npm install`.
+      #
+      # `npm ci` installs strictly from package-lock.json and hard-fails when
+      # package.json and the lockfile disagree. It also wipes node_modules
+      # first, so nothing installed by a previous step can mask a gap.
+      #
+      # This repo shipped an undeclared `axios` for exactly this reason: it was
+      # imported by src/pages/Search.jsx but listed in neither package.json nor
+      # the lockfile. Local builds passed only because Node's resolver walked
+      # out of the repo and found a stray copy in the developer's home
+      # directory. A fresh runner has no such ambient node_modules to fall back
+      # on, which is the entire point of running this in CI.
+      - name: Install dependencies (clean, lockfile-only)
+        run: npm ci
+
+      # There is no test suite in this repo yet, so the production build is the
+      # primary regression signal. Combined with the clean install above, this
+      # is the step that catches an imported-but-undeclared dependency: the
+      # bundler cannot resolve it and the job fails.
+      - name: Build
+        run: npm run build
+
+      # TEMPORARY BASELINE — non-blocking on purpose.
+      #
+      # `npm run lint` currently reports 17 pre-existing errors (unused React
+      # imports, an unused `err` binding, `module` undefined in
+      # tailwind.config.js). Making this blocking on day one would land a
+      # pipeline that is red on arrival, and a check that is always red is a
+      # check everyone learns to ignore.
+      #
+      # Lint output stays visible in the job log so the count can be driven
+      # down. Once it reaches zero, delete `continue-on-error` below and this
+      # comment to make lint a real gate.
+      - name: Lint (non-blocking baseline)
+        # Runs even when an earlier step failed, so the report is not lost on a
+        # red build. Does not run if the job was cancelled.
+        if: ${{ !cancelled() }}
+        run: npm run lint
+        continue-on-error: true
+
+      # Informational only. Surfaces vulnerable dependencies on every run
+      # without blocking a merge on a transitive advisory that has no fix
+      # available that day. The summary lands on the run's summary page.
+      - name: Security audit (informational)
+        # Reports on every run, including runs where the build failed.
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          # Capture first, report second. Avoids depending on whether the
+          # runner shell has `pipefail` set, and guarantees the fenced block
+          # below is always closed even when audit exits non-zero.
+          set +e
+          npm audit --audit-level=high > audit.txt 2>&1
+          audit_status=$?
+          set -e
+
+          cat audit.txt
+
+          {
+            echo "## npm audit (high severity and above)"
+            echo ""
+            echo '```'
+            cat audit.txt
+            echo '```'
+            echo ""
+            if [ "$audit_status" -eq 0 ]; then
+              echo "No advisories at high severity or above."
+            else
+              echo "Advisories found. This step is informational and does not block the build."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          rm -f audit.txt
