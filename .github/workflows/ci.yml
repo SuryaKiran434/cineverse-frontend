@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          # SonarCloud needs the full history to attribute code to authors and
+          # to work out what counts as "new code"; a shallow clone breaks both.
+          fetch-depth: 0
 
       - name: Set up Node 20
         uses: actions/setup-node@v7
@@ -51,6 +55,19 @@ jobs:
       # bundler cannot resolve it and the job fails.
       - name: Build
         run: npm run build
+
+      # Analysis only -- there is no test suite here, so nothing to import as
+      # coverage. Runs after the build so an unresolvable import fails the job
+      # on the build step, where the error is legible, rather than here.
+      # Configuration lives in sonar-project.properties at the repo root.
+      #
+      # Analysis is advisory, not a gate: continue-on-error keeps a SonarCloud
+      # outage or a scanner hiccup from failing the required check.
+      - name: SonarCloud analysis
+        continue-on-error: true
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       # TEMPORARY BASELINE — non-blocking on purpose.
       #
