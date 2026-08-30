@@ -20,6 +20,7 @@ Built with **React 19**, **React Router 7**, **Tailwind CSS** and **Vite 6**.
 - [Talking to the backend](#talking-to-the-backend)
 - [State management](#state-management)
 - [Build tooling](#build-tooling)
+- [Testing](#testing)
 - [Running locally](#running-locally)
 - [Security: `VITE_` variables are public](#security-vite_-variables-are-public)
 - [Known rough edges](#known-rough-edges)
@@ -122,14 +123,15 @@ navigation so each page re-runs its fetch effects.
 | `Home.jsx` | Fetches the TMDB genre list, then a random page of `/discover/movie` per genre, rendering a horizontally scrollable row each; separately fetches `GET /recommendations` from the backend |
 | `Search.jsx` | Reads `?query=` from the URL, calls `GET /tmdb/search` on the backend via `axios`, renders results in a 4-column grid, falls back to `/noimage.jpg` when a poster is missing |
 | `MovieDetails.jsx` | The detail page wired into the router. Movie data from TMDB directly; streaming providers from `GET /tmdb/movie/{id}/providers`; "add to watchlist" / "mark watched" buttons |
-| `Watchlist.jsx` | `GET /watchlist`, with `DELETE /watchlist/remove/{movie_id}` per row |
-| `Watched.jsx` | `GET /watched`, with `DELETE /watched/remove/{movie_id}` per row |
+| `Watchlist.jsx` | A wrapper over `components/MovieCollectionPage` supplying `collection="watchlist"` and its own heading and empty-state copy |
+| `Watched.jsx` | The same wrapper with `collection="watched"` |
 | `Account.jsx` | Placeholder — renders `<h1>Account Page</h1>` and is **not routed** |
 
 ### `src/components/`
 
 | File | What it does |
 |---|---|
+| `MovieCollectionPage.jsx` | The grid behind both list pages: `GET /{collection}`, `DELETE /{collection}/remove/{movie_id}` per row, redirect to `/login` when no token is stored, and five-column rows padded so the last row keeps its column widths. `Watchlist.jsx` and `Watched.jsx` were byte-identical apart from five strings before this was extracted, which is why the `assertMovieId` guard had to be written twice. |
 | `Navbar.jsx` | Fixed top bar: Home / Watchlist / Watched links, a Logout button that clears `localStorage.token` and redirects to `/login`, and a search form rendered only on `/home` that navigates to `/search?query=…` |
 | `MovieDetails.jsx` | **Unused.** An earlier, simpler detail view. `App.jsx` imports `pages/MovieDetails`, not this one. |
 
@@ -160,10 +162,8 @@ Endpoints this client calls:
 | `MovieDetails.jsx` | `GET` | `/tmdb/movie/{id}/providers` | — |
 | `MovieDetails.jsx` | `POST` | `/watchlist/add` | — (sends `user_id` in the body) |
 | `MovieDetails.jsx` | `POST` | `/watched/add` | Bearer |
-| `Watchlist.jsx` | `GET` | `/watchlist` | Bearer |
-| `Watchlist.jsx` | `DELETE` | `/watchlist/remove/{movie_id}` | Bearer |
-| `Watched.jsx` | `GET` | `/watched` | Bearer |
-| `Watched.jsx` | `DELETE` | `/watched/remove/{movie_id}` | Bearer |
+| `MovieCollectionPage.jsx` | `GET` | `/watchlist` · `/watched` | Bearer |
+| `MovieCollectionPage.jsx` | `DELETE` | `/{collection}/remove/{movie_id}` | Bearer |
 
 Authenticated calls attach the token read straight out of `localStorage`:
 
@@ -203,7 +203,7 @@ component state and re-issues every request — there is no cache.
 
 | Tool | Version | Role |
 |---|---|---|
-| Vite | 6 | Dev server, bundler; JSX handled by esbuild |
+| Vite | 6 | Dev server, bundler; JSX via `@vitejs/plugin-react`, so Fast Refresh works |
 | React | 19 | UI |
 | React Router | 7 | Client-side routing |
 | Tailwind CSS | 4 | Utility CSS, via `@tailwindcss/vite` |
@@ -211,8 +211,10 @@ component state and re-issues every request — there is no cache.
 | `lucide-react`, `react-icons` | — | Icons |
 | `react-transition-group` | — | Transitions |
 
-Config files: `vite.config.js`, `tailwind.config.js`, `postcss.config.cjs`,
-`eslint.config.js`.
+Config files: `vite.config.js` (Vite, Tailwind and Vitest), `eslint.config.js`,
+`sonar-project.properties`. Tailwind v4 needs no `tailwind.config.js`, and there is no
+PostCSS config — routing Tailwind through both the Vite plugin and PostCSS ran it twice
+over the same stylesheet, so the PostCSS copy was removed.
 
 Styling is a mix of Tailwind utility classes and large inline `style={{…}}`
 objects, plus a little hand-written CSS in `src/index.css` and `src/App.css`.
@@ -225,6 +227,37 @@ objects, plus a little hand-written CSS in `src/index.css` and `src/App.css`.
 | `npm run build` | `vite build` | Production bundle into `dist/` |
 | `npm run preview` | `vite preview` | Serve the built bundle locally |
 | `npm run lint` | `eslint .` | Lint |
+| `npm run test` | `vitest run` | Unit tests |
+| `npm run test:coverage` | `vitest run --coverage` | Unit tests plus `coverage/lcov.info` for SonarCloud |
+
+---
+
+## Testing
+
+```bash
+npm run test              # 47 tests
+npm run test:coverage     # plus coverage/lcov.info
+```
+
+Vitest with jsdom and `@testing-library/react`. CI runs `test:coverage` before the
+SonarCloud scan in the same job, so the report exists when the scanner looks for it —
+a source file Sonar analyses but cannot find in a coverage report is scored 0%
+covered rather than unmeasured.
+
+| Suite | Covers |
+|---|---|
+| `src/utils/__tests__/movieId.test.js` | `assertMovieId`, case by case: traversal sequences, slashes, query and fragment characters, encoded traversal, non-integers, and the non-string inputs |
+| `src/components/__tests__/MovieCollectionPage.test.jsx` | The unauthenticated redirect, both collections, the empty and missing-key states, the poster fallback, the failure paths that only reach `console.error`, and that a `movie_id` failing validation produces **no** `DELETE` at all |
+| `src/pages/__tests__/collections.test.jsx` | That each wrapper passes its own endpoint and copy |
+
+`assertMovieId` is a security control — it is what keeps a traversal sequence out of a
+request URL path, since `encodeURIComponent` leaves `..` intact inside a path segment —
+so its rejection cases are pinned individually rather than sampled. The four files
+above sit at 100%. The rest of `src/` has no tests yet.
+
+One documented quirk: `assertMovieId(true)` returns `1`, because `Number(true) === 1`.
+That is safe — the contract is that whatever reaches the path is a bare integer — so it
+is pinned as behaviour rather than tightened.
 
 ---
 
@@ -330,25 +363,15 @@ Documented so they are not mistaken for design:
 
 - **`VITE_TMDB_API_KEY` is still read** by `Home.jsx` and
   `pages/MovieDetails.jsx`. See the section above.
-- **`axios` is imported by `Search.jsx` but is not in `package.json`.** It
-  resolves today only if something else hoisted it into `node_modules`; a clean
-  `npm install` will break that page. Either add the dependency or convert the
-  call to `fetch` like every other call site.
-- **The backend URL is hard-coded** as `http://127.0.0.1:8000` in ten places
-  rather than read from `VITE_API_BASE_URL`, so the app cannot be pointed at a
-  deployed backend without editing source.
-- **`dist/` is committed** despite being listed in `.gitignore`; it was tracked
-  before the ignore rule existed and the build output is stale.
+- **The backend URL is hard-coded** as `http://127.0.0.1:8000` in 14 places across
+  9 files rather than read from `VITE_API_BASE_URL`, so the app cannot be pointed at
+  a deployed backend without editing source. `MovieCollectionPage.jsx` holds it in a
+  single `API_BASE` constant, which is the shape the rest should move to.
 - **`src/components/MovieDetails.jsx` is dead code** — superseded by
   `src/pages/MovieDetails.jsx`.
 - **`src/pages/Account.jsx` is an unrouted placeholder.**
-- **Tailwind v4 is installed but `src/index.css` uses the v3 directives**
-  (`@tailwind base;` …) rather than v4's `@import "tailwindcss"`. Tailwind is
-  also configured twice, through `@tailwindcss/vite` in `vite.config.js` *and*
-  `@tailwindcss/postcss` in `postcss.config.cjs`.
-- **`vite.config.js` does not register `@vitejs/plugin-react`** even though it
-  is a devDependency, so JSX is transformed by esbuild without React Fast
-  Refresh.
 - **`PrivateRoute` only checks that a token string exists**, never that it is
   valid or unexpired.
-- **No tests and no CI workflow** in this repository yet.
+- **Only `src/utils` and the two collection pages have tests.** The remaining pages
+  and components have none, so the project-wide coverage figure is low by design
+  rather than by accident.
