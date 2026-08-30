@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import { assertMovieId } from "../utils/movieId";
 
 function Watched() {
   const [movies, setMovies] = useState([]);
@@ -38,7 +39,8 @@ function Watched() {
     const token = localStorage.getItem("token");
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/watched/remove/${movieId}`, {
+      const safeMovieId = assertMovieId(movieId);
+      const response = await fetch(`http://127.0.0.1:8000/watched/remove/${safeMovieId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
