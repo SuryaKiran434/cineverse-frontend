@@ -56,9 +56,14 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Analysis only -- there is no test suite here, so nothing to import as
-      # coverage. Runs after the build so an unresolvable import fails the job
-      # on the build step, where the error is legible, rather than here.
+      # Writes coverage/lcov.info, which the SonarCloud step below imports.
+      # Blocking on purpose: a failing unit test should fail the job.
+      - name: Unit tests (vitest, with coverage)
+        run: npm run test:coverage
+
+      # Runs after the build so an unresolvable import fails the job on the
+      # build step, where the error is legible, rather than here -- and after
+      # the tests, so coverage/lcov.info exists for the scanner to import.
       # Configuration lives in sonar-project.properties at the repo root.
       #
       # Analysis is advisory, not a gate: continue-on-error keeps a SonarCloud
