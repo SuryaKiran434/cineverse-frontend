@@ -160,10 +160,15 @@ Endpoints this client calls:
 | `Home.jsx` | `GET` | `/recommendations` | Bearer |
 | `Search.jsx` | `GET` | `/tmdb/search?query=` | — |
 | `MovieDetails.jsx` | `GET` | `/tmdb/movie/{id}/providers` | — |
-| `MovieDetails.jsx` | `POST` | `/watchlist/add` | — (sends `user_id` in the body) |
+| `MovieDetails.jsx` | `POST` | `/watchlist/add` | Bearer ¹ |
 | `MovieDetails.jsx` | `POST` | `/watched/add` | Bearer |
 | `MovieCollectionPage.jsx` | `GET` | `/watchlist` · `/watched` | Bearer |
 | `MovieCollectionPage.jsx` | `DELETE` | `/{collection}/remove/{movie_id}` | Bearer |
+
+¹ `MovieDetails.jsx` still puts a `user_id` in the `/watchlist/add` body as well.
+The backend ignores it — it derives the watchlist owner from the verified token
+and its request model has no `user_id` field — so the field is vestigial and can
+be dropped from the payload.
 
 Authenticated calls attach the token read straight out of `localStorage`:
 
@@ -239,10 +244,18 @@ npm run test              # 47 tests
 npm run test:coverage     # plus coverage/lcov.info
 ```
 
-Vitest with jsdom and `@testing-library/react`. CI runs `test:coverage` before the
-SonarCloud scan in the same job, so the report exists when the scanner looks for it —
-a source file Sonar analyses but cannot find in a coverage report is scored 0%
-covered rather than unmeasured.
+Vitest with jsdom and `@testing-library/react`. CI (`.github/workflows/ci.yml`,
+job **Frontend (Node 20)**) runs `npm ci`, `npm run build` and `test:coverage`,
+then the SonarCloud scan in the same job, so the report exists when the scanner
+looks for it — a source file Sonar analyses but cannot find in a coverage report
+is scored 0% covered rather than unmeasured. `npm run lint` and `npm audit` run
+last as non-blocking, informational steps.
+
+Two more workflows sit alongside it: `slack-notify.yml` posts a push
+notification, and `dependabot-auto-merge.yml` queues Dependabot's grouped
+patch/minor pull requests to merge once the required checks go green — majors
+are excluded and wait for a human. `.github/dependabot.yml` collapses each
+ecosystem (`npm`, `github-actions`) into one grouped pull request per week.
 
 | Suite | Covers |
 |---|---|
