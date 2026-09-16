@@ -17,7 +17,7 @@ jobs:
   frontend:
     # This name becomes the status-check context. Keep it stable — renaming it
     # orphans any branch protection rule that references the old name.
-    name: Frontend (Node 20)
+    name: Frontend (Node 24)
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +28,7 @@ jobs:
           # to work out what counts as "new code"; a shallow clone breaks both.
           fetch-depth: 0
 
-      - name: Set up Node 20
+      - name: Set up Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
